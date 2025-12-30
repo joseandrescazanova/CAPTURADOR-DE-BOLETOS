@@ -1,0 +1,47 @@
+# Entorno virtual
+venv/
+env/
+ENV/
+
+# Bytecode de Python
+*.py[cod]
+*$py.class
+__pycache__/
+
+# Configuraciones y archivos temporales
+*.temp
+*.tmp
+*.log
+*.bak
+*.swp
+*.swo
+
+# Logs
+logs/*
+!logs/.gitkeep
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de proyecto generados/descargados
+proyecto/boletos/*
+!proyecto/boletos/.gitkeep
+
+# Assets que pueden regenerarse (excepto si son de prueba)
+# Mantenemos los assets de prueba pero ignoramos los generados
+assets/*_generado*
+assets/temp_*
+
+# Archivos de configuración local
+config/config.yaml.temp
+
+# Archivos de IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Archivos de sistema operativo específicos
+*.orig
+*~

@@ -1,0 +1,77 @@
+# config/config.yaml
+
+# Configuración de la aplicación Capturador de Boletos
+# Todas las rutas son relativas al directorio de ejecución, a menos que se especifique lo contrario.
+
+# config/config.yaml - CONFIGURACIÓN OPTIMIZADA
+
+camara:
+  id_dispositivo: 0
+  resolucion_captura: [1920, 1080]  # Full HD - más estable
+  resolucion_vista: [1280, 720]     # 720p para vista previa
+  fps: 30                           # 30 FPS para Full HD
+  modo_color: "bgr"
+  brillo: 0
+  contraste: 0
+  # Nuevo parámetro: detección automática de resolución
+  deteccion_automatica_resolucion: true
+  
+procesamiento:
+  # Parámetros para el procesamiento de imágenes
+  umbral_calidad: 0.7              # Umbral mínimo de confianza para considerar una captura válida (0.0-1.0)
+  
+  # Región del código de barras (coordenadas relativas: 0.0 a 1.0)
+  # x, y: esquina superior izquierda; ancho, alto: dimensiones relativas
+  region_barras:
+    x: 0.10        # 10% desde izquierda (no 5%)
+    y: 0.80        # 80% desde arriba (código en parte inferior)
+    ancho: 0.80    # 80% del ancho
+    alto: 0.15     # 15% del alto (432px → 324px, más realista)
+  
+  # Filtros a aplicar a la imagen del código de barras antes de decodificar
+  filtros:
+    - "ecualizacion"      # Ecualización de histograma para mejorar contraste
+    - "suavizado"         # Suavizado gaussiano para reducir ruido
+  
+  # Estrategia de búsqueda si no se encuentra en la región esperada
+  busqueda_robusta: true  # Activar búsqueda automática del código de barras
+
+archivos:
+  # Configuración de guardado de archivos
+  ruta_base: "./proyecto/boletos"  # Ruta base donde se crearán las carpetas diarias
+  formato_imagen: "jpg"            # Formato para guardar imágenes: "jpg" o "png"
+  calidad_jpg: 90                  # Calidad para JPEG (1-100)
+  guardar_fallidas: true           # Guardar imágenes cuando falle la decodificación
+  guardar_roi: true                # Guardar la ROI del código de barras para depuración
+  
+  # Estructura de nombres de archivo
+  # Patrones disponibles: {tipo}, {codigo}, {timestamp}, {indice}
+  nombre_frente: "frente_{codigo}_{timestamp}"
+  nombre_reverso: "reverso_{codigo}_{timestamp}"
+  nombre_roi: "roi_{codigo}_{timestamp}"
+  nombre_metadata: "metadata_{codigo}_{timestamp}"
+  nombre_fallida: "fallida_{timestamp}"
+
+ui:
+  # Configuración de la interfaz de usuario
+  tema: "oscuro"                   # Opciones: "oscuro", "claro"
+  mostrar_timestamp: true          # Mostrar fecha y hora en la interfaz
+  feedback_sonido: false           # Emitir sonidos al capturar (requiere pygame o similar)
+  
+  # Tamaños y dimensiones
+  tamano_miniatura: [320, 240]     # Tamaño de las miniaturas [ancho, alto]
+  actualizacion_ms: 33             # Intervalo de actualización de la cámara en ms (~30 FPS)
+
+logging:
+  # Configuración del sistema de logging
+  nivel_consola: "INFO"            # Nivel para salida a consola: DEBUG, INFO, WARNING, ERROR
+  nivel_archivo: "DEBUG"           # Nivel para archivo de log
+  ruta_logs: "./logs"              # Directorio para archivos de log
+  max_mb_log: 10                   # Tamaño máximo por archivo de log (MB)
+  dias_a_conservar: 7              # Días de logs a conservar
+
+# Parámetros de desarrollo (pueden desactivarse en producción)
+desarrollo:
+  modo_depuracion: false            # Activar características de depuración
+  simular_camara: false            # Usar imagen estática en lugar de cámara real (para testing)
+  ruta_imagen_simulada: "./assets/test_boleto.jpg"  # Ruta a imagen para simulación
