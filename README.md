@@ -241,8 +241,8 @@ Las contribuciones son bienvenidas:
 
 ## 📞 Contacto y Soporte
 
-- **Issues**: Sistema de issues del repositorio
-- **Email**: tu-email@dominio.com
+- **Autor**: Jose Andres Casanova T.
+- **Email**: joseandrescazanova@gmail.com - @joseandrescazanova
 - **Documentación**: Carpeta `docs/` (si aplica)
 
 > **Nota:** Proyecto en desarrollo activo. Las funcionalidades pueden cambiar.
