@@ -165,19 +165,51 @@ QScrollBar::handle:vertical:hover {
     background: #78909c;
 }
 
-/* GroupBox */
+/* GroupBox - ESTILOS MEJORADOS */
 QGroupBox {
     font-weight: bold;
-    border: 1px solid #455a64;
-    border-radius: 4px;
+    border: 2px solid #455a64;
+    border-radius: 8px;
     margin-top: 10px;
-    padding-top: 10px;
+    margin-bottom: 10px;
+    padding-top: 20px;
+    background-color: rgba(38, 50, 56, 0.6);
 }
 
 QGroupBox::title {
     subcontrol-origin: margin;
-    left: 10px;
-    padding: 0 5px 0 5px;
+    left: 15px;
+    padding: 4px 12px 4px 12px;
+    background-color: #263238;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: bold;
+    border-radius: 4px;
+    border: 1px solid #546e7a;
+}
+
+/* Grupo específico para controles */
+QGroupBox#grupo_controles {
+    border: 2px solid #1976d2;
+    background-color: rgba(25, 118, 210, 0.15);
+}
+
+QGroupBox#grupo_controles::title {
+    color: #4fc3f7;
+    background-color: rgba(25, 118, 210, 0.3);
+    border: 1px solid #1976d2;
+}
+
+/* Grupo específico para estado */
+QGroupBox#grupo_estado {
+    border: 2px solid #388e3c;
+    background-color: rgba(56, 142, 60, 0.15);
+}
+
+QGroupBox#grupo_estado::title {
+    color: #81c784;
+    background-color: rgba(56, 142, 60, 0.3);
+    border: 1px solid #388e3c;
 }
 
 /* Progress Bar */
@@ -226,5 +258,52 @@ QLabel#texto_codigo {
     background-color: #000000;
     padding: 10px;
     border-radius: 4px;
+}
+"""
+
+ESTILO_GRUPOS = """
+/* Estilos específicos para grupos (pueden aplicarse adicionalmente) */
+QGroupBox {
+    font-weight: bold;
+    border: 2px solid #455a64;
+    border-radius: 8px;
+    margin-top: 10px;
+    margin-bottom: 10px;
+    padding-top: 20px;
+    background-color: rgba(38, 50, 56, 0.6);
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 15px;
+    padding: 4px 12px 4px 12px;
+    background-color: #263238;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: bold;
+    border-radius: 4px;
+    border: 1px solid #546e7a;
+}
+
+QGroupBox#grupo_controles {
+    border: 2px solid #1976d2;
+    background-color: rgba(25, 118, 210, 0.15);
+}
+
+QGroupBox#grupo_controles::title {
+    color: #4fc3f7;
+    background-color: rgba(25, 118, 210, 0.3);
+    border: 1px solid #1976d2;
+}
+
+QGroupBox#grupo_estado {
+    border: 2px solid #388e3c;
+    background-color: rgba(56, 142, 60, 0.15);
+}
+
+QGroupBox#grupo_estado::title {
+    color: #81c784;
+    background-color: rgba(56, 142, 60, 0.3);
+    border: 1px solid #388e3c;
 }
 """

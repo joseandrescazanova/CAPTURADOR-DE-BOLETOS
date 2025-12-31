@@ -19,6 +19,8 @@ class VentanaPrincipal(QMainWindow):
 
         self.setWindowTitle("Capturador de Boletos v1.0")
         self.resize(1200, 800)
+
+        # Aplicar estilos ANTES de crear widgets
         self.setStyleSheet(ESTILO_APP)
 
         # 1. Widget central y layout
@@ -35,9 +37,10 @@ class VentanaPrincipal(QMainWindow):
         # 4. Conectar señales
         self._conectar_señales()
 
-        # Estado inicial de botones
         self.panel_botones.actualizar_botones("listo")
         self.statusBar().showMessage("Sistema listo")
+        # ACTUALIZAR ESTADO INICIAL
+        self._actualizar_estado_ui("listo", 0)
 
     def _init_ui(self):
         self.previsualizador = PrevisualizadorWidget(modo_diagnostico=True)
@@ -104,42 +107,61 @@ class VentanaPrincipal(QMainWindow):
         self.panel_botones.reiniciar_signal.connect(self._on_reiniciar)
         self.panel_botones.salir_signal.connect(self.close)
 
+    def _actualizar_estado_ui(self, estado: str, boletos_procesados: int = None):
+        """Actualiza el estado mostrado en el panel."""
+        try:
+            # Actualizar label de estado
+            estados_display = {
+                "listo": "✅ SISTEMA LISTO",
+                "frente_capturado": "📸 FRENTE CAPTURADO",
+                "reverso_capturado": "📸 REVERSO CAPTURADO - CÓDIGO DETECTADO",
+                "guardando": "💾 GUARDANDO DATOS...",
+                "error": "❌ ERROR EN EL SISTEMA",
+            }
+
+            estado_display = estados_display.get(estado.lower(), estado.upper())
+            self.panel_botones.actualizar_estado(estado_display, boletos_procesados)
+
+        except Exception as e:
+            self.logger.error(f"Error actualizando estado UI: {e}")
+
     def _on_capturar_frente(self):
-        # Ahora el capturador devuelve (exito, frame, msg) correctamente
         exito, frame, msg = self._capturador.capturar_frente()
 
         if exito:
             self.panel_miniaturas.actualizar_miniatura_frente(frame)
             self.panel_botones.actualizar_botones("frente_capturado")
             self.statusBar().showMessage(f"✓ {msg}")
+            # ACTUALIZAR ESTADO
+            self._actualizar_estado_ui(
+                "frente_capturado", self._capturador._procesados_totales
+            )
         else:
+            self._actualizar_estado_ui("error", self._capturador._procesados_totales)
             QMessageBox.warning(self, "Error de Captura", msg)
 
     def _on_capturar_reverso(self):
-        """Manejador para el botón de capturar reverso."""
         if self._capturador.capturar_reverso():
             datos = self._capturador.datos_actuales
             codigo = datos.get("codigo_barras", "N/D")
             img_rev = datos.get("imagen_reverso")
-            img_roi = datos.get("imagen_roi")  # El recorte que acabamos de habilitar
+            img_roi = datos.get("imagen_roi")
 
-            # Actualizar toda la interfaz
             self.panel_miniaturas.actualizar_miniatura_reverso(img_rev)
             self.panel_miniaturas.actualizar_codigo(codigo, True)
-            self.panel_miniaturas.actualizar_miniatura_roi(
-                img_roi
-            )  # <--- AÑADIR ESTA LÍNEA
+            self.panel_miniaturas.actualizar_miniatura_roi(img_roi)
 
             self.panel_botones.actualizar_botones("reverso_capturado")
             self.statusBar().showMessage(f"✓ Código detectado: {codigo}")
+            # ACTUALIZAR ESTADO
+            self._actualizar_estado_ui(
+                "reverso_capturado", self._capturador._procesados_totales
+            )
 
-    # ventana_principal.py - Método _on_guardar
     def _on_guardar(self):
-        # EL MÉTODO CORRECTO ES finalizar_captura() NO finalizar_captura_boleto()
-        datos = self._capturador.finalizar_captura()  # ¡ESTE ES EL MÉTODO CORRECTO!
+        datos = self._capturador.finalizar_captura()
         if datos:
-            # Usar texto seguro para el código
-            from utils.encoding import texto_seguro  # Añadir import si no existe
+            from utils.encoding import texto_seguro
 
             codigo = texto_seguro(datos.get("codigo_barras", "Desconocido"))
             QMessageBox.information(
@@ -149,6 +171,7 @@ class VentanaPrincipal(QMainWindow):
             )
             self._on_reiniciar()
         else:
+            self._actualizar_estado_ui("error", self._capturador._procesados_totales)
             QMessageBox.critical(self, "Error", "No se pudieron guardar los datos.")
 
     def _on_reiniciar(self):
@@ -156,6 +179,8 @@ class VentanaPrincipal(QMainWindow):
         self.panel_miniaturas.resetear()
         self.panel_botones.actualizar_botones("listo")
         self.statusBar().showMessage("Sistema reiniciado")
+        # ACTUALIZAR ESTADO
+        self._actualizar_estado_ui("listo", self._capturador._procesados_totales)
 
     def closeEvent(self, event):
         if hasattr(self, "_capturador"):

@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QSpacerItem,
     QSizePolicy,
+    QGroupBox,  # ¡FALTA ESTA IMPORTACIÓN!
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -37,32 +38,37 @@ class PanelBotonesWidget(QWidget):
         except Exception as e:
             self._manejar_error(f"Error en __init__ de PanelBotonesWidget: {e}")
 
+    # MODIFICAR las líneas donde se crean los QGroupBox:
+
     def _setup_ui(self):
         """Configura la interfaz de usuario."""
         try:
             # Layout principal
             layout = QVBoxLayout(self)
-            layout.setSpacing(10)
-            layout.setContentsMargins(10, 10, 10, 10)
+            layout.setSpacing(15)  # Aumentar espaciado
+            layout.setContentsMargins(15, 15, 15, 15)
 
-            # Título
-            titulo = QLabel("CONTROLES DE CAPTURA")
-            titulo_font = QFont()
-            titulo_font.setBold(True)
-            titulo_font.setPointSize(12)
-            titulo.setFont(titulo_font)
-            titulo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            titulo.setStyleSheet("color: #4fc3f7; padding: 10px;")
-            layout.addWidget(titulo)
+            # ========== GRUPO 1: CONTROLES PRINCIPALES ==========
+            grupo_controles = QGroupBox("CONTROLES DE CAPTURA")
+            grupo_controles.setObjectName("grupo_controles")  # ¡IMPORTANTE!
 
-            # Botón: Capturar Frente
+            # ELIMINAR el setStyleSheet de aquí (se manejará en estilos.py)
+            # grupo_controles.setStyleSheet("""
+            #     ...código eliminado...
+            # """)
+
+            layout_controles = QVBoxLayout(grupo_controles)
+            layout_controles.setSpacing(12)  # Más espaciado entre botones
+            layout_controles.setContentsMargins(15, 20, 15, 15)  # Más margen interno
+
+            # Botón: Capturar Frente (sin cambios en creación)
             self.btn_capturar_frente = QPushButton("📸 CAPTURAR FRENTE")
             self.btn_capturar_frente.setObjectName("btn_capturar_frente")
             self.btn_capturar_frente.setToolTip(
                 "Captura la imagen del frente del boleto"
             )
             self.btn_capturar_frente.setEnabled(False)
-            layout.addWidget(self.btn_capturar_frente)
+            layout_controles.addWidget(self.btn_capturar_frente)
 
             # Botón: Capturar Reverso
             self.btn_capturar_reverso = QPushButton("📸 CAPTURAR REVERSO")
@@ -71,7 +77,7 @@ class PanelBotonesWidget(QWidget):
                 "Captura la imagen del reverso del boleto y decodifica código de barras"
             )
             self.btn_capturar_reverso.setEnabled(False)
-            layout.addWidget(self.btn_capturar_reverso)
+            layout_controles.addWidget(self.btn_capturar_reverso)
 
             # Botón: Guardar y Finalizar
             self.btn_guardar = QPushButton("💾 GUARDAR Y FINALIZAR")
@@ -80,7 +86,7 @@ class PanelBotonesWidget(QWidget):
                 "Guarda todas las imágenes y metadatos del boleto"
             )
             self.btn_guardar.setEnabled(False)
-            layout.addWidget(self.btn_guardar)
+            layout_controles.addWidget(self.btn_guardar)
 
             # Botón: Reiniciar
             self.btn_reiniciar = QPushButton("🔄 REINICIAR CAPTURA")
@@ -88,42 +94,37 @@ class PanelBotonesWidget(QWidget):
                 "Descarta la captura actual y comienza de nuevo"
             )
             self.btn_reiniciar.setEnabled(False)
-            layout.addWidget(self.btn_reiniciar)
+            layout_controles.addWidget(self.btn_reiniciar)
+
+            layout.addWidget(grupo_controles)
 
             # Espaciador
             spacer = QSpacerItem(
-                20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding
+                20, 30, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding
             )
             layout.addItem(spacer)
 
-            # Sección de estado
-            estado_label = QLabel("ESTADO DEL SISTEMA")
-            estado_font = QFont()
-            estado_font.setBold(True)
-            estado_font.setPointSize(10)
-            estado_label.setFont(estado_font)
-            estado_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            estado_label.setStyleSheet("color: #b0bec5; padding: 5px;")
-            layout.addWidget(estado_label)
+            # ========== GRUPO 2: ESTADO DEL SISTEMA ==========
+            grupo_estado = QGroupBox("ESTADO DEL SISTEMA")
+            grupo_estado.setObjectName("grupo_estado")  # ¡IMPORTANTE!
 
-            self.label_estado = QLabel("Inicializando...")
+            layout_estado = QVBoxLayout(grupo_estado)
+            layout_estado.setSpacing(10)
+            layout_estado.setContentsMargins(15, 20, 15, 15)
+
+            self.label_estado = QLabel("Listo")
             self.label_estado.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.label_estado.setStyleSheet("""
-                QLabel {
-                    background-color: #263238;
-                    border: 1px solid #455a64;
-                    border-radius: 4px;
-                    padding: 8px;
-                    color: #b0bec5;
-                }
-            """)
-            layout.addWidget(self.label_estado)
+            self.label_estado.setMinimumHeight(
+                40
+            )  # Altura mínima para mejor visibilidad
+            layout_estado.addWidget(self.label_estado)
 
             # Contador de boletos
             self.label_contador = QLabel("Boletos procesados: 0")
             self.label_contador.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.label_contador.setStyleSheet("color: #78909c;")
-            layout.addWidget(self.label_contador)
+            layout_estado.addWidget(self.label_contador)
+
+            layout.addWidget(grupo_estado)
 
             # Espaciador
             spacer2 = QSpacerItem(
@@ -131,10 +132,11 @@ class PanelBotonesWidget(QWidget):
             )
             layout.addItem(spacer2)
 
-            # Botón: Salir
+            # Botón: Salir (mantener separado)
             self.btn_salir = QPushButton("🚪 SALIR")
             self.btn_salir.setObjectName("btn_salir")
             self.btn_salir.setToolTip("Cierra la aplicación")
+            self.btn_salir.setMinimumHeight(45)  # Botón más grande
             layout.addWidget(self.btn_salir)
 
         except Exception as e:
