@@ -6,6 +6,7 @@ Maneja la estructura de archivos, nombres y metadatos.
 
 import json
 import shutil
+import re
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple, List
 from pathlib import Path
@@ -27,7 +28,7 @@ class GestorDatos:
     Gestiona el almacenamiento de imágenes y metadatos de boletos.
 
     Responsabilidades:
-    1. Crear estructura de carpetas organizadas por fecha
+    1. Crear estructura de carpetas organizadas por código de barras
     2. Guardar imágenes con nombres descriptivos y únicos
     3. Generar y guardar metadatos en formato JSON
     4. Manejar errores de E/S y validar espacio en disco
@@ -35,13 +36,17 @@ class GestorDatos:
 
     Estructura de archivos:
     proyecto/boletos/
-    ├── 2024-01-15/
-    │   ├── frente_123456789012_20240115_143000.jpg
-    │   ├── reverso_123456789012_20240115_143005.jpg
-    │   ├── roi_123456789012_20240115_143005.jpg
-    │   └── metadata_123456789012_20240115_143005.json
-    └── 2024-01-16/
-        └── ...
+    ├── 11100530064053876048/           # Carpeta con el código de barras
+    │   ├── frente_20240115_143000.jpg
+    │   ├── reverso_20240115_143005.jpg
+    │   ├── roi_20240115_143005.jpg
+    │   └── metadata_20240115_143005.json
+    ├── 11100530064053876048_1/         # Segundo boleto con mismo código
+    │   ├── frente_20240115_143112.jpg
+    │   └── metadata_20240115_143112.json
+    └── 98765432101234567890/           # Otro código de barras
+        ├── frente_20240115_143215.jpg
+        └── metadata_20240115_143215.json
     """
 
     def __init__(self, config_obj=None):
@@ -70,12 +75,76 @@ class GestorDatos:
 
         self.logger.info("GestorDatos inicializado")
 
-    def preparar_directorio(self, fecha: Optional[datetime] = None) -> str:
+    def _sanitizar_nombre_carpeta(self, nombre: str) -> str:
         """
-        Prepara el directorio para guardar archivos del día.
+        Sanitiza un nombre para usarlo como carpeta.
 
         Args:
-            fecha: Fecha para el directorio. Si es None, usa la fecha actual.
+            nombre: Nombre original.
+
+        Returns:
+            Nombre sanitizado.
+        """
+        if not self.config.archivos.sanitizar_nombre_carpeta:
+            return nombre
+
+        # Reemplazar caracteres no válidos para sistemas de archivos
+        caracteres_invalidos = r'[<>:"/\\|?*\x00-\x1F]'
+        caracter_reemplazo = self.config.archivos.caracteres_reemplazo
+
+        nombre_sanitizado = re.sub(caracteres_invalidos, caracter_reemplazo, nombre)
+
+        # Limitar longitud (evitar problemas en algunos sistemas de archivos)
+        max_longitud = 255
+        if len(nombre_sanitizado) > max_longitud:
+            nombre_sanitizado = nombre_sanitizado[:max_longitud]
+
+        return nombre_sanitizado
+
+    def _obtener_ruta_directorio_codigo(self, codigo: str) -> str:
+        """
+        Obtiene la ruta del directorio basado en el código de barras.
+
+        Args:
+            codigo: Código de barras.
+
+        Returns:
+            Ruta del directorio.
+        """
+        # Sanitizar código para nombre de carpeta
+        nombre_carpeta = self._sanitizar_nombre_carpeta(codigo)
+
+        # Construir ruta base
+        ruta_base = self.config.archivos.ruta_base
+        ruta_directorio = os.path.join(ruta_base, nombre_carpeta)
+
+        # Si se debe evitar sobreescritura, buscar ruta única
+        if self.config.archivos.evitar_sobreescritura and os.path.exists(
+            ruta_directorio
+        ):
+            indice = 1
+            while True:
+                ruta_alternativa = f"{ruta_directorio}_{indice}"
+                if not os.path.exists(ruta_alternativa):
+                    ruta_directorio = ruta_alternativa
+                    break
+                indice += 1
+
+                # Límite de seguridad
+                if indice > 100:
+                    raise ErrorGuardadoDatos(
+                        f"Demasiadas carpetas con el código: {codigo}"
+                    )
+
+        return ruta_directorio
+
+    def preparar_directorio(self, codigo_barras: str = None) -> str:
+        """
+        Prepara el directorio para guardar archivos.
+
+        Args:
+            codigo_barras: Código de barras para organizar por código.
+                          Si es None, usa estructura por fecha.
 
         Returns:
             Ruta completa del directorio creado/preparado.
@@ -84,15 +153,26 @@ class GestorDatos:
             ErrorGuardadoDatos: Si no se puede crear el directorio.
         """
         try:
-            if fecha is None:
-                fecha = datetime.now()
+            estructura = self.config.archivos.estructura_directorios
 
-            # Formatear fecha como YYYY-MM-DD
-            nombre_directorio = fecha.strftime("%Y-%m-%d")
-
-            # Construir ruta completa
+            # Construir ruta base
             ruta_base = self.config.archivos.ruta_base
-            ruta_directorio = os.path.join(ruta_base, nombre_directorio)
+
+            if estructura == "codigo" and codigo_barras:
+                # Organizar por código de barras
+                ruta_directorio = self._obtener_ruta_directorio_codigo(codigo_barras)
+
+            elif estructura == "fecha" or codigo_barras is None:
+                # Organizar por fecha (comportamiento original)
+                fecha_actual = datetime.now()
+                nombre_directorio = fecha_actual.strftime(
+                    self.config.archivos.formato_fecha
+                )
+                ruta_directorio = os.path.join(ruta_base, nombre_directorio)
+
+            else:
+                # Sin estructura - todos en la misma carpeta
+                ruta_directorio = ruta_base
 
             # Crear directorios si no existen
             os.makedirs(ruta_directorio, exist_ok=True)
@@ -108,7 +188,10 @@ class GestorDatos:
                 self.logger.warning(f"Poco espacio en disco para {ruta_directorio}")
 
             self._directorio_actual = ruta_directorio
-            self.logger.info(f"Directorio preparado: {ruta_directorio}")
+
+            self.logger.info(
+                f"Directorio preparado: {ruta_directorio} (estructura: {estructura})"
+            )
 
             return ruta_directorio
 
@@ -153,8 +236,17 @@ class GestorDatos:
         self._timestamp_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         # Asegurar que hay un directorio preparado
+        # Ahora pasamos el código para determinar estructura
         if self._directorio_actual is None:
-            self.preparar_directorio()
+            self.preparar_directorio(codigo_barras)
+        else:
+            # Si ya tenemos directorio pero es diferente del código actual,
+            # crear nuevo directorio
+            if self.config.archivos.estructura_directorios == "codigo":
+                nuevo_directorio = self._obtener_ruta_directorio_codigo(codigo_barras)
+                if nuevo_directorio != self._directorio_actual:
+                    self._directorio_actual = nuevo_directorio
+                    os.makedirs(self._directorio_actual, exist_ok=True)
 
         self.logger.info(f"Iniciando captura para boleto: {codigo_barras}")
 
@@ -175,7 +267,11 @@ class GestorDatos:
             raise ErrorGuardadoDatos("No se ha iniciado una captura de boleto")
 
         if extension is None:
-            extension = self.config.archivos.formato_imagen
+            # Para metadatos, usar json
+            if tipo == "metadata":
+                extension = "json"
+            else:
+                extension = self.config.archivos.formato_imagen
 
         # Construir patrón según configuración
         patrones = {
@@ -190,7 +286,7 @@ class GestorDatos:
             self.logger.warning(
                 f"Tipo de archivo desconocido: {tipo}. Usando patrón por defecto."
             )
-            patron = f"{tipo}_{{codigo}}_{{timestamp}}"
+            patron = f"{tipo}_{{timestamp}}"
         else:
             patron = patrones[tipo]
 
@@ -198,6 +294,7 @@ class GestorDatos:
         nombre = patron.replace("{tipo}", tipo)
         nombre = nombre.replace("{codigo}", self._codigo_actual)
         nombre = nombre.replace("{timestamp}", self._timestamp_actual)
+        nombre = nombre.replace("{fecha}", datetime.now().strftime("%Y-%m-%d"))
 
         # Añadir secuencia si hay colisiones
         nombre_base = nombre
@@ -319,6 +416,12 @@ class GestorDatos:
             # Añadir información del sistema
             datos_boleto["version_sistema"] = "1.0.0"
             datos_boleto["fecha_guardado"] = datetime.now().isoformat()
+            datos_boleto["estructura_organizacion"] = (
+                self.config.archivos.estructura_directorios
+            )
+            datos_boleto["directorio_codigo"] = os.path.basename(
+                self._directorio_actual
+            )
 
             # Construir nombre de archivo
             nombre_archivo = self._construir_nombre_archivo("metadata", "json")
@@ -348,8 +451,6 @@ class GestorDatos:
             self._errores_guardado += 1
             raise ErrorGuardadoDatos(f"Error al guardar metadatos: {e}")
 
-    # En core/gestor_datos.py, método guardar_imagen_fallida:
-
     def guardar_imagen_fallida(
         self, imagen: np.ndarray, razon: str = "desconocida"
     ) -> Optional[str]:
@@ -366,7 +467,8 @@ class GestorDatos:
                 self.logger.debug("Preparando directorio temporal para imagen fallida")
                 self.preparar_directorio()
 
-            # Crear directorio especial para fallos si no existe
+            # Para imágenes fallidas, guardar en subdirectorio especial
+            # dentro del directorio actual
             ruta_fallidas = os.path.join(self._directorio_actual, "fallidas")
             os.makedirs(ruta_fallidas, exist_ok=True)
 
@@ -419,6 +521,7 @@ class GestorDatos:
             "modo_color": self.config.camara.modo_color,
             "resolucion_captura": self.config.camara.resolucion_captura,
             "version_aplicacion": "1.0.0",
+            "estructura_organizacion": self.config.archivos.estructura_directorios,
         }
 
         # Añadir rutas de imágenes
@@ -455,12 +558,14 @@ class GestorDatos:
             datos_boleto["ruta_metadatos"] = ruta_metadata
 
             self.logger.info(
-                f"Captura finalizada para boleto: {datos_boleto['codigo_barras']}"
+                f"Captura finalizada para boleto: {datos_boleto['codigo_barras']} "
+                f"(directorio: {self._directorio_actual})"
             )
 
             # Resetear estado para próximo boleto
             self._codigo_actual = None
             self._timestamp_actual = None
+            self._directorio_actual = None  # Resetear directorio para próximo boleto
 
             return datos_boleto
 
@@ -479,8 +584,8 @@ class GestorDatos:
         Método de compatibilidad para finalizar captura.
         """
         try:
-            # Preparar directorio
-            self.preparar_directorio()
+            # Preparar directorio con código
+            self.preparar_directorio(codigo)
 
             # Iniciar captura con el código
             self.iniciar_captura_boleto(codigo)
@@ -538,11 +643,13 @@ class GestorDatos:
             "bytes_por_archivo": (
                 self._bytes_guardados / max(1, self._archivos_guardados)
             ),
+            "estructura_organizacion": self.config.archivos.estructura_directorios,
         }
 
     def limpiar_directorios_viejos(self, dias_a_conservar: int = 30) -> int:
         """
         Elimina directorios más antiguos que el número especificado de días.
+        Solo funciona con estructura por fecha.
 
         Args:
             dias_a_conservar: Número de días a conservar.
@@ -551,6 +658,12 @@ class GestorDatos:
             Número de directorios eliminados.
         """
         try:
+            if self.config.archivos.estructura_directorios != "fecha":
+                self.logger.warning(
+                    "Limpieza de directorios viejos solo funciona con estructura por fecha"
+                )
+                return 0
+
             if dias_a_conservar < 1:
                 raise ValueError("dias_a_conservar debe ser al menos 1")
 
@@ -570,7 +683,9 @@ class GestorDatos:
 
                 try:
                     # Intentar parsear como fecha
-                    fecha_directorio = datetime.strptime(nombre, "%Y-%m-%d")
+                    fecha_directorio = datetime.strptime(
+                        nombre, self.config.archivos.formato_fecha
+                    )
 
                     # Verificar si es más viejo que el límite
                     if fecha_directorio.timestamp() < fecha_limite:
@@ -584,7 +699,7 @@ class GestorDatos:
 
             if directorios_eliminados > 0:
                 self.logger.info(
-                    f"Eliminados {directorios_eliminados} directorios viejos"
+                    f"Eliminados {directorio_eliminados} directorios viejos"
                 )
 
             return directorios_eliminados
@@ -601,7 +716,8 @@ class GestorDatos:
                 self.logger.info(
                     f"GestorDatos finalizado. "
                     f"Archivos: {stats['archivos_guardados']}, "
-                    f"Bytes: {stats['bytes_guardados'] / 1024 / 1024:.1f} MB"
+                    f"Bytes: {stats['bytes_guardados'] / 1024 / 1024:.1f} MB, "
+                    f"Estructura: {stats['estructura_organizacion']}"
                 )
         except:
             pass  # Ignorar errores en destructor
@@ -617,7 +733,7 @@ if __name__ == "__main__":
 
     def test_basico():
         """Prueba básica del GestorDatos."""
-        print("Probando GestorDatos...")
+        print("Probando GestorDatos con estructura por código...")
 
         try:
             from config import config
@@ -628,22 +744,30 @@ if __name__ == "__main__":
             # Crear gestor
             gestor = GestorDatos(cfg)
             print(f"✓ GestorDatos creado")
+            print(f"  Estructura configurada: {cfg.archivos.estructura_directorios}")
 
-            # Probar preparación de directorio
-            print("\n1. Preparar directorio...")
-            directorio = gestor.preparar_directorio()
+            # Probar preparación de directorio con código
+            print("\n1. Preparar directorio por código...")
+            codigo_test = "11100530064053876048"
+            directorio = gestor.preparar_directorio(codigo_test)
             print(f"   ✓ Directorio preparado: {directorio}")
             print(f"   ✓ Existe: {os.path.exists(directorio)}")
             print(f"   ✓ Se puede escribir: {os.access(directorio, os.W_OK)}")
 
+            # Probar sanitización de nombre
+            print("\n2. Probar sanitización de nombres...")
+            codigo_problema = "TEST/123\\456*789?012"
+            nombre_sanitizado = gestor._sanitizar_nombre_carpeta(codigo_problema)
+            print(f"   ✓ Código original: {codigo_problema}")
+            print(f"   ✓ Código sanitizado: {nombre_sanitizado}")
+
             # Probar iniciar captura
-            print("\n2. Iniciar captura de boleto...")
-            codigo_test = "TEST123456789"
+            print("\n3. Iniciar captura de boleto...")
             gestor.iniciar_captura_boleto(codigo_test)
             print(f"   ✓ Captura iniciada para: {codigo_test}")
 
             # Crear imagen de prueba
-            print("\n3. Crear y guardar imagen de prueba...")
+            print("\n4. Crear y guardar imagen de prueba...")
             imagen_test = np.random.randint(0, 255, (100, 150, 3), dtype=np.uint8)
 
             # Guardar imagen
@@ -654,26 +778,28 @@ if __name__ == "__main__":
             )
 
             # Probar construcción de datos
-            print("\n4. Construir datos de boleto...")
+            print("\n5. Construir datos de boleto...")
             rutas = {
                 "frente": ruta_imagen,
-                "reverso": "reverso_TEST123456789_20241222_154600.jpg",
-                "roi": "roi_TEST123456789_20241222_154600.jpg",
+                "reverso": "reverso_20241222_154600.jpg",
+                "roi": "roi_20241222_154600.jpg",
             }
 
             datos = gestor.construir_datos_boleto(
                 rutas_imagenes=rutas,
                 codigo_barras=codigo_test,
-                metadata_adicional={"notas": "Boleto de prueba"},
+                metadata_adicional={
+                    "notas": "Boleto de prueba con estructura por código"
+                },
             )
 
             print(f"   ✓ Datos construidos")
             print(f"     - Código: {datos['codigo_barras']}")
+            print(f"     - Estructura: {datos.get('estructura_organizacion', 'N/A')}")
             print(f"     - Fecha: {datos['fecha_captura']}")
-            print(f"     - Modo color: {datos['modo_color']}")
 
             # Guardar metadatos
-            print("\n5. Guardar metadatos...")
+            print("\n6. Guardar metadatos...")
             ruta_metadata = gestor.guardar_metadatos(datos)
             print(f"   ✓ Metadatos guardados: {ruta_metadata}")
 
@@ -683,36 +809,74 @@ if __name__ == "__main__":
                 datos_leidos = json.load(f)
 
             print(f"   ✓ JSON válido, contiene {len(datos_leidos)} campos")
+            print(
+                f"   ✓ Directorio en metadatos: {datos_leidos.get('directorio_codigo')}"
+            )
 
             # Finalizar captura
-            print("\n6. Finalizar captura...")
+            print("\n7. Finalizar captura...")
             datos_final = gestor.finalizar_captura_boleto(datos)
             print(f"   ✓ Captura finalizada")
             print(
                 f"     - Ruta metadatos en datos: {datos_final.get('ruta_metadatos')}"
             )
 
+            # Probar segundo boleto con mismo código
+            print("\n8. Probar segundo boleto con mismo código...")
+            gestor2 = GestorDatos(cfg)
+            gestor2.preparar_directorio(codigo_test)  # Mismo código
+            gestor2.iniciar_captura_boleto(codigo_test)
+
+            # Crear timestamp diferente
+            import time
+
+            time.sleep(0.1)
+
+            # Guardar segunda imagen
+            imagen_test2 = np.random.randint(0, 255, (100, 150, 3), dtype=np.uint8)
+            ruta_imagen2 = gestor2.guardar_imagen(imagen_test2, "frente")
+            print(f"   ✓ Segunda imagen guardada: {ruta_imagen2}")
+
+            # Verificar si está en subdirectorio con índice
+            if "_1" in gestor2._directorio_actual:
+                print(f"   ✓ Evitando sobreescritura: directorio con índice")
+            else:
+                print(
+                    f"   ⚠️  Advertencia: podría sobreescribir (evitar_sobreescritura: {cfg.archivos.evitar_sobreescritura})"
+                )
+
             # Estadísticas
-            print("\n7. Estadísticas:")
+            print("\n9. Estadísticas:")
             stats = gestor.obtener_estadisticas()
             for clave, valor in stats.items():
-                if clave != "directorio_actual":  # Ya lo mostramos
+                if clave not in ["directorio_actual"]:  # Ya lo mostramos
                     print(f"   ✓ {clave}: {valor}")
 
             # Limpieza (opcional para pruebas)
-            print("\n8. Limpieza de prueba...")
+            print("\n10. Limpieza de prueba...")
             if "TEST" in codigo_test:
-                # Eliminar archivos de prueba
+                # Eliminar directorios de prueba
                 try:
                     import shutil
 
-                    if os.path.exists(directorio):
-                        shutil.rmtree(directorio)
-                        print(f"   ✓ Directorio de prueba eliminado")
+                    directorio_prueba = os.path.dirname(
+                        os.path.join(cfg.archivos.ruta_base, ruta_imagen)
+                    )
+                    if os.path.exists(directorio_prueba):
+                        shutil.rmtree(directorio_prueba)
+                        print(
+                            f"   ✓ Directorio de prueba eliminado: {directorio_prueba}"
+                        )
+
+                    if "gestor2" in locals():
+                        directorio2 = gestor2._directorio_actual
+                        if directorio2 and os.path.exists(directorio2):
+                            shutil.rmtree(directorio2)
+                            print(f"   ✓ Segundo directorio eliminado: {directorio2}")
                 except Exception as e:
                     print(f"   ⚠️  No se pudo limpiar: {e}")
 
-            print("\n✅ GestorDatos funciona correctamente")
+            print("\n✅ GestorDatos con estructura por código funciona correctamente")
             return True
 
         except Exception as e:
@@ -727,6 +891,12 @@ if __name__ == "__main__":
 
                 if "directorio" in locals() and os.path.exists(directorio):
                     shutil.rmtree(directorio)
+                if (
+                    "gestor2" in locals()
+                    and gestor2._directorio_actual
+                    and os.path.exists(gestor2._directorio_actual)
+                ):
+                    shutil.rmtree(gestor2._directorio_actual)
             except:
                 pass
 

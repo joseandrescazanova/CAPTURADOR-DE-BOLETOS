@@ -1,8 +1,3 @@
-# config/config.yaml
-
-# Configuración de la aplicación Capturador de Boletos
-# Todas las rutas son relativas al directorio de ejecución, a menos que se especifique lo contrario.
-
 # config/config.yaml - CONFIGURACIÓN OPTIMIZADA
 
 camara:
@@ -38,40 +33,61 @@ procesamiento:
 
 archivos:
   # Configuración de guardado de archivos
-  ruta_base: "./proyecto/boletos"  # Ruta base donde se crearán las carpetas diarias
-  formato_imagen: "jpg"            # Formato para guardar imágenes: "jpg" o "png"
-  calidad_jpg: 90                  # Calidad para JPEG (1-100)
-  guardar_fallidas: true           # Guardar imágenes cuando falle la decodificación
-  guardar_roi: true                # Guardar la ROI del código de barras para depuración
+  ruta_base: "./proyecto/boletos"  # Ruta base donde se crearán las carpetas por código
   
-  # Estructura de nombres de archivo
-  # Patrones disponibles: {tipo}, {codigo}, {timestamp}, {indice}
-  nombre_frente: "frente_{codigo}_{timestamp}"
-  nombre_reverso: "reverso_{codigo}_{timestamp}"
-  nombre_roi: "roi_{codigo}_{timestamp}"
-  nombre_metadata: "metadata_{codigo}_{timestamp}"
+  # NUEVO: Estructura de directorios
+  # false: todos los archivos en ruta_base
+  # "fecha": organizar por fecha (YYYY-MM-DD)
+  # "codigo": organizar por código de barras decodificado
+  estructura_directorios: "codigo"
+  
+  # Permitir caracteres especiales en nombres de carpetas
+  # Si el código contiene caracteres no válidos para nombres de carpeta
+  sanitizar_nombre_carpeta: true
+  caracteres_reemplazo: "_"
+  
+  # Si se usa estructura por fecha, puedes mantener esto:
+  formato_fecha: "%Y-%m-%d"  # Formato para carpetas por fecha
+  
+  # Formato para guardar imágenes
+  formato_imagen: "jpg"
+  calidad_jpg: 90
+  
+  # Qué guardar
+  guardar_fallidas: false
+  guardar_roi: true
+  
+  # Estructura de nombres de archivo dentro de cada carpeta
+  # Patrones disponibles: {tipo}, {codigo}, {timestamp}, {indice}, {fecha}
+  nombre_frente: "frente_{timestamp}"
+  nombre_reverso: "reverso_{timestamp}"
+  nombre_roi: "roi_{timestamp}"
+  nombre_metadata: "metadata_{timestamp}"
   nombre_fallida: "fallida_{timestamp}"
+  
+  # NUEVO: Para evitar conflictos con múltiples boletos del mismo código
+  # Si es true, añade índice cuando ya existe una carpeta
+  evitar_sobreescritura: true
 
 ui:
   # Configuración de la interfaz de usuario
-  tema: "oscuro"                   # Opciones: "oscuro", "claro"
-  mostrar_timestamp: true          # Mostrar fecha y hora en la interfaz
-  feedback_sonido: false           # Emitir sonidos al capturar (requiere pygame o similar)
+  tema: "oscuro"
+  mostrar_timestamp: true
+  feedback_sonido: false
   
   # Tamaños y dimensiones
-  tamano_miniatura: [320, 240]     # Tamaño de las miniaturas [ancho, alto]
-  actualizacion_ms: 33             # Intervalo de actualización de la cámara en ms (~30 FPS)
+  tamano_miniatura: [320, 240]
+  actualizacion_ms: 33
 
 logging:
   # Configuración del sistema de logging
-  nivel_consola: "INFO"            # Nivel para salida a consola: DEBUG, INFO, WARNING, ERROR
-  nivel_archivo: "DEBUG"           # Nivel para archivo de log
-  ruta_logs: "./logs"              # Directorio para archivos de log
-  max_mb_log: 10                   # Tamaño máximo por archivo de log (MB)
-  dias_a_conservar: 7              # Días de logs a conservar
+  nivel_consola: "INFO"
+  nivel_archivo: "DEBUG"
+  ruta_logs: "./logs"
+  max_mb_log: 10
+  dias_a_conservar: 30
 
-# Parámetros de desarrollo (pueden desactivarse en producción)
 desarrollo:
-  modo_depuracion: false            # Activar características de depuración
-  simular_camara: false            # Usar imagen estática en lugar de cámara real (para testing)
-  ruta_imagen_simulada: "./assets/test_boleto.jpg"  # Ruta a imagen para simulación
+  modo_depuracion: false
+  simular_camara: false
+  ruta_imagen_simulada: "./assets/test_boleto.jpg"
