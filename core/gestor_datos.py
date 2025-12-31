@@ -1,8 +1,4 @@
-# core/gestor_datos.py
-"""
-Módulo para la gestión y almacenamiento de datos de boletos capturados.
-Maneja la estructura de archivos, nombres y metadatos.
-"""
+# core/gestor_datos.py - COMPLETO CON COMPORTAMIENTO CORREGIDO
 
 import json
 import shutil
@@ -34,19 +30,23 @@ class GestorDatos:
     4. Manejar errores de E/S y validar espacio en disco
     5. Proporcionar rutas para acceso externo
 
-    Estructura de archivos:
-    proyecto/boletos/
-    ├── 11100530064053876048/           # Carpeta con el código de barras
-    │   ├── frente_20240115_143000.jpg
-    │   ├── reverso_20240115_143005.jpg
-    │   ├── roi_20240115_143005.jpg
-    │   └── metadata_20240115_143005.json
-    ├── 11100530064053876048_1/         # Segundo boleto con mismo código
-    │   ├── frente_20240115_143112.jpg
-    │   └── metadata_20240115_143112.json
-    └── 98765432101234567890/           # Otro código de barras
-        ├── frente_20240115_143215.jpg
-        └── metadata_20240115_143215.json
+    Comportamiento según evitar_sobreescritura:
+
+    evitar_sobreescritura: true (Modo seguro/archivo)
+    ├── 123456/                    # 1ª captura
+    │   ├── frente_123456_101500.jpg
+    │   └── metadata_123456_101500.json
+    ├── 123456_1/                  # 2ª captura
+    │   ├── frente_123456_101510.jpg
+    │   └── metadata_123456_101510.json
+    └── 123456_2/                  # 3ª captura
+        ├── frente_123456_101520.jpg
+        └── metadata_123456_101520.json
+
+    evitar_sobreescritura: false (Modo sobreescritura)
+    └── 123456/                    # ÚLTIMA captura (3ª)
+        ├── frente_123456_101520.jpg  # Sobreescribe el anterior
+        └── metadata_123456_101520.json  # Sobreescribe el anterior
     """
 
     def __init__(self, config_obj=None):
@@ -101,6 +101,47 @@ class GestorDatos:
 
         return nombre_sanitizado
 
+    def _directorio_tiene_archivos(self, ruta_directorio: str) -> bool:
+        """
+        Verifica si un directorio tiene archivos.
+
+        Args:
+            ruta_directorio: Ruta del directorio a verificar.
+
+        Returns:
+            True si el directorio tiene archivos, False si está vacío.
+        """
+        try:
+            if not os.path.exists(ruta_directorio):
+                return False
+
+            # Listar archivos (no directorios)
+            contenido = []
+            for item in os.listdir(ruta_directorio):
+                item_path = os.path.join(ruta_directorio, item)
+                if os.path.isfile(item_path):
+                    # Ignorar archivos ocultos y de sistema
+                    if not item.startswith("."):
+                        # Verificar que no sean archivos vacíos o de 0 bytes
+                        if os.path.getsize(item_path) > 0:
+                            contenido.append(item)
+
+            # También considerar subdirectorios no vacíos
+            for item in os.listdir(ruta_directorio):
+                item_path = os.path.join(ruta_directorio, item)
+                if os.path.isdir(item_path):
+                    # Verificar si el subdirectorio tiene contenido
+                    if self._directorio_tiene_archivos(item_path):
+                        contenido.append(item)
+
+            return len(contenido) > 0
+
+        except Exception as e:
+            self.logger.warning(
+                f"Error al verificar contenido de directorio {ruta_directorio}: {e}"
+            )
+            return True  # Por precaución, asumir que tiene archivos
+
     def _obtener_ruta_directorio_codigo(self, codigo: str) -> str:
         """
         Obtiene la ruta del directorio basado en el código de barras.
@@ -116,27 +157,100 @@ class GestorDatos:
 
         # Construir ruta base
         ruta_base = self.config.archivos.ruta_base
-        ruta_directorio = os.path.join(ruta_base, nombre_carpeta)
 
-        # Si se debe evitar sobreescritura, buscar ruta única
-        if self.config.archivos.evitar_sobreescritura and os.path.exists(
-            ruta_directorio
-        ):
-            indice = 1
-            while True:
-                ruta_alternativa = f"{ruta_directorio}_{indice}"
-                if not os.path.exists(ruta_alternativa):
-                    ruta_directorio = ruta_alternativa
-                    break
-                indice += 1
+        # Lógica diferente según evitar_sobreescritura
+        if self.config.archivos.evitar_sobreescritura:
+            # MODO SEGURO: Buscar siguiente directorio disponible
+            return self._buscar_directorio_disponible(ruta_base, nombre_carpeta)
+        else:
+            # MODO SOBREESCRITURA: Siempre usar el directorio base
+            ruta_directorio = os.path.join(ruta_base, nombre_carpeta)
 
-                # Límite de seguridad
-                if indice > 100:
-                    raise ErrorGuardadoDatos(
-                        f"Demasiadas carpetas con el código: {codigo}"
-                    )
+            # IMPORTANTE: Si el directorio existe y tiene archivos, LIMPIARLO
+            if os.path.exists(ruta_directorio) and self._directorio_tiene_archivos(
+                ruta_directorio
+            ):
+                self.logger.info(
+                    f"Limpiando directorio existente (evitar_sobreescritura=false): {ruta_directorio}"
+                )
+                self._limpiar_directorio(ruta_directorio)
 
-        return ruta_directorio
+            return ruta_directorio
+
+    def _limpiar_directorio(self, ruta_directorio: str) -> None:
+        """
+        Limpia todos los archivos de un directorio.
+
+        Args:
+            ruta_directorio: Directorio a limpiar.
+        """
+        try:
+            for item in os.listdir(ruta_directorio):
+                item_path = os.path.join(ruta_directorio, item)
+                try:
+                    if os.path.isfile(item_path) or os.path.islink(item_path):
+                        os.unlink(item_path)
+                    elif os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+                except Exception as e:
+                    self.logger.warning(f"No se pudo eliminar {item_path}: {e}")
+
+            self.logger.debug(f"Directorio limpiado: {ruta_directorio}")
+        except Exception as e:
+            self.logger.error(f"Error al limpiar directorio {ruta_directorio}: {e}")
+
+    def _buscar_directorio_disponible(self, ruta_base: str, nombre_base: str) -> str:
+        """
+        Busca el siguiente directorio disponible para un código.
+
+        Args:
+            ruta_base: Ruta base donde buscar.
+            nombre_base: Nombre base del directorio.
+
+        Returns:
+            Ruta del directorio disponible.
+        """
+        # Empezar con el directorio base
+        ruta_directorio = os.path.join(ruta_base, nombre_base)
+
+        # Verificar si podemos usar el directorio base
+        if not os.path.exists(ruta_directorio):
+            # Directorio base no existe, usarlo
+            return ruta_directorio
+
+        # Directorio base existe, verificar si está vacío
+        if not self._directorio_tiene_archivos(ruta_directorio):
+            # Directorio base existe pero está vacío, reutilizarlo
+            self.logger.debug(f"Reutilizando directorio vacío: {ruta_directorio}")
+            return ruta_directorio
+
+        # Directorio base existe y tiene archivos, buscar con índice
+        indice = 1
+        while True:
+            ruta_alternativa = f"{ruta_directorio}_{indice}"
+
+            if not os.path.exists(ruta_alternativa):
+                # Directorio con índice no existe, crearlo
+                self.logger.debug(
+                    f"Creando directorio con índice {indice}: {ruta_alternativa}"
+                )
+                return ruta_alternativa
+            elif os.path.exists(
+                ruta_alternativa
+            ) and not self._directorio_tiene_archivos(ruta_alternativa):
+                # Directorio con índice existe pero está vacío, reutilizarlo
+                self.logger.debug(
+                    f"Reutilizando directorio vacío con índice {indice}: {ruta_alternativa}"
+                )
+                return ruta_alternativa
+
+            indice += 1
+
+            # Límite de seguridad
+            if indice > 1000:
+                raise ErrorGuardadoDatos(
+                    f"Demasiadas carpetas con el código: {nombre_base}"
+                )
 
     def preparar_directorio(self, codigo_barras: str = None) -> str:
         """
@@ -183,14 +297,20 @@ class GestorDatos:
                     f"Sin permisos de escritura en: {ruta_directorio}"
                 )
 
-            # Validar espacio en disco (opcional, puede ser lento)
-            if self._verificar_espacio_disco(ruta_directorio) < 100:  # Menos de 100 MB
+            # Validar espacio en disco
+            if self._verificar_espacio_disco(ruta_directorio) < 100:
                 self.logger.warning(f"Poco espacio en disco para {ruta_directorio}")
 
             self._directorio_actual = ruta_directorio
 
+            modo = (
+                "SEGURO (evitar_sobreescritura=true)"
+                if self.config.archivos.evitar_sobreescritura
+                else "SOBREESCRITURA (evitar_sobreescritura=false)"
+            )
             self.logger.info(
-                f"Directorio preparado: {ruta_directorio} (estructura: {estructura})"
+                f"Directorio preparado: {ruta_directorio} "
+                f"(estructura: {estructura}, código: {codigo_barras}, modo: {modo})"
             )
 
             return ruta_directorio
@@ -235,18 +355,33 @@ class GestorDatos:
         self._codigo_actual = codigo_barras
         self._timestamp_actual = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # Asegurar que hay un directorio preparado
-        # Ahora pasamos el código para determinar estructura
-        if self._directorio_actual is None:
+        # Determinar si debemos reutilizar el directorio actual
+        reutilizar_directorio = False
+
+        if self._directorio_actual is not None:
+            directorio_actual_base = os.path.basename(self._directorio_actual)
+            nombre_carpeta = self._sanitizar_nombre_carpeta(codigo_barras)
+
+            # Verificar si el directorio actual corresponde a este código
+            if (
+                directorio_actual_base == nombre_carpeta
+                or directorio_actual_base.startswith(f"{nombre_carpeta}_")
+            ):
+                # Solo reutilizar si evitar_sobreescritura está DESACTIVADO
+                if not self.config.archivos.evitar_sobreescritura:
+                    reutilizar_directorio = True
+                    self.logger.debug(
+                        f"Reutilizando directorio (evitar_sobreescritura=false): {self._directorio_actual}"
+                    )
+                else:
+                    self.logger.debug(
+                        f"No reutilizando directorio (evitar_sobreescritura=true): {self._directorio_actual}"
+                    )
+                    self._directorio_actual = None
+
+        if not reutilizar_directorio:
+            # No hay directorio reutilizable, crear uno nuevo
             self.preparar_directorio(codigo_barras)
-        else:
-            # Si ya tenemos directorio pero es diferente del código actual,
-            # crear nuevo directorio
-            if self.config.archivos.estructura_directorios == "codigo":
-                nuevo_directorio = self._obtener_ruta_directorio_codigo(codigo_barras)
-                if nuevo_directorio != self._directorio_actual:
-                    self._directorio_actual = nuevo_directorio
-                    os.makedirs(self._directorio_actual, exist_ok=True)
 
         self.logger.info(f"Iniciando captura para boleto: {codigo_barras}")
 
@@ -286,7 +421,7 @@ class GestorDatos:
             self.logger.warning(
                 f"Tipo de archivo desconocido: {tipo}. Usando patrón por defecto."
             )
-            patron = f"{tipo}_{{timestamp}}"
+            patron = f"{tipo}_{{codigo}}_{{timestamp}}"
         else:
             patron = patrones[tipo]
 
@@ -296,23 +431,30 @@ class GestorDatos:
         nombre = nombre.replace("{timestamp}", self._timestamp_actual)
         nombre = nombre.replace("{fecha}", datetime.now().strftime("%Y-%m-%d"))
 
-        # Añadir secuencia si hay colisiones
-        nombre_base = nombre
-        contador = 1
+        # Añadir secuencia si hay colisiones (solo si evitar_sobreescritura=true)
+        if self.config.archivos.evitar_sobreescritura:
+            nombre_base = nombre
+            contador = 1
 
-        while True:
-            nombre_completo = f"{nombre_base}.{extension}"
-            ruta_completa = os.path.join(self._directorio_actual, nombre_completo)
+            while True:
+                nombre_completo = f"{nombre_base}.{extension}"
+                ruta_completa = os.path.join(self._directorio_actual, nombre_completo)
 
-            if not os.path.exists(ruta_completa):
-                break
+                if not os.path.exists(ruta_completa):
+                    break
 
-            # Añadir número de secuencia
-            nombre_base = f"{nombre}_{contador}"
-            contador += 1
+                # Añadir número de secuencia
+                nombre_base = f"{nombre}_{contador}"
+                contador += 1
 
-            if contador > 100:  # Límite de seguridad
-                raise ErrorGuardadoDatos("Demasiadas colisiones de nombres de archivo")
+                if contador > 100:  # Límite de seguridad
+                    raise ErrorGuardadoDatos(
+                        "Demasiadas colisiones de nombres de archivo"
+                    )
+        else:
+            # Si evitar_sobreescritura=false, no verificar colisiones
+            # simplemente usar el nombre (sobreescribirá si existe)
+            nombre_completo = f"{nombre}.{extension}"
 
         return nombre_completo
 
@@ -362,7 +504,7 @@ class GestorDatos:
             else:
                 raise ErrorGuardadoDatos(f"Formato no soportado: {formato}")
 
-            # Guardar imagen
+            # Guardar imagen (sobreescribirá si existe y evitar_sobreescritura=false)
             exito = cv2.imwrite(ruta_completa, imagen, params)
 
             if not exito:
@@ -373,8 +515,9 @@ class GestorDatos:
             self._archivos_guardados += 1
             self._bytes_guardados += tamaño_bytes
 
+            modo = "sobreescrito" if os.path.exists(ruta_completa) else "creado"
             self.logger.debug(
-                f"Imagen guardada: {nombre_archivo} ({tamaño_bytes / 1024:.1f} KB)"
+                f"Imagen {modo}: {nombre_archivo} ({tamaño_bytes / 1024:.1f} KB)"
             )
 
             # Devolver ruta relativa desde la base
@@ -422,6 +565,9 @@ class GestorDatos:
             datos_boleto["directorio_codigo"] = os.path.basename(
                 self._directorio_actual
             )
+            datos_boleto["evitar_sobreescritura"] = (
+                self.config.archivos.evitar_sobreescritura
+            )
 
             # Construir nombre de archivo
             nombre_archivo = self._construir_nombre_archivo("metadata", "json")
@@ -436,8 +582,9 @@ class GestorDatos:
             self._archivos_guardados += 1
             self._bytes_guardados += tamaño_bytes
 
+            modo = "sobreescrito" if os.path.exists(ruta_completa) else "creado"
             self.logger.debug(
-                f"Metadatos guardados: {nombre_archivo} ({tamaño_bytes / 1024:.1f} KB)"
+                f"Metadatos {modo}: {nombre_archivo} ({tamaño_bytes / 1024:.1f} KB)"
             )
 
             # Devolver ruta relativa
@@ -522,6 +669,7 @@ class GestorDatos:
             "resolucion_captura": self.config.camara.resolucion_captura,
             "version_aplicacion": "1.0.0",
             "estructura_organizacion": self.config.archivos.estructura_directorios,
+            "evitar_sobreescritura": self.config.archivos.evitar_sobreescritura,
         }
 
         # Añadir rutas de imágenes
@@ -557,15 +705,23 @@ class GestorDatos:
             # Añadir ruta de metadatos a los datos
             datos_boleto["ruta_metadatos"] = ruta_metadata
 
+            modo = (
+                "SEGURO"
+                if self.config.archivos.evitar_sobreescritura
+                else "SOBREESCRITURA"
+            )
             self.logger.info(
                 f"Captura finalizada para boleto: {datos_boleto['codigo_barras']} "
-                f"(directorio: {self._directorio_actual})"
+                f"(directorio: {self._directorio_actual}, modo: {modo})"
             )
 
-            # Resetear estado para próximo boleto
+            # Solo resetear directorio si evitar_sobreescritura está activado
+            # Si está desactivado, mantener el directorio para reutilizar
+            if self.config.archivos.evitar_sobreescritura:
+                self._directorio_actual = None  # Resetear para próxima captura
+
             self._codigo_actual = None
             self._timestamp_actual = None
-            self._directorio_actual = None  # Resetear directorio para próximo boleto
 
             return datos_boleto
 
@@ -584,10 +740,7 @@ class GestorDatos:
         Método de compatibilidad para finalizar captura.
         """
         try:
-            # Preparar directorio con código
-            self.preparar_directorio(codigo)
-
-            # Iniciar captura con el código
+            # Solo iniciar captura - esto manejará la creación del directorio
             self.iniciar_captura_boleto(codigo)
 
             # Guardar imágenes
@@ -620,7 +773,7 @@ class GestorDatos:
                 },
             )
 
-            # Finalizar captura
+            # Finalizar captura (pero mantener el directorio actual si evitar_sobreescritura=false)
             self.finalizar_captura_boleto(datos)
             self.logger.info(f"Captura finalizada para código: {codigo}")
             return True
@@ -644,6 +797,7 @@ class GestorDatos:
                 self._bytes_guardados / max(1, self._archivos_guardados)
             ),
             "estructura_organizacion": self.config.archivos.estructura_directorios,
+            "evitar_sobreescritura": self.config.archivos.evitar_sobreescritura,
         }
 
     def limpiar_directorios_viejos(self, dias_a_conservar: int = 30) -> int:
@@ -699,7 +853,7 @@ class GestorDatos:
 
             if directorios_eliminados > 0:
                 self.logger.info(
-                    f"Eliminados {directorio_eliminados} directorios viejos"
+                    f"Eliminados {directorios_eliminados} directorios viejos"
                 )
 
             return directorios_eliminados
@@ -713,194 +867,11 @@ class GestorDatos:
         try:
             stats = self.obtener_estadisticas()
             if stats["archivos_guardados"] > 0:
+                modo = "SEGURO" if stats["evitar_sobreescritura"] else "SOBREESCRITURA"
                 self.logger.info(
-                    f"GestorDatos finalizado. "
+                    f"GestorDatos finalizado (modo: {modo}). "
                     f"Archivos: {stats['archivos_guardados']}, "
-                    f"Bytes: {stats['bytes_guardados'] / 1024 / 1024:.1f} MB, "
-                    f"Estructura: {stats['estructura_organizacion']}"
+                    f"Bytes: {stats['bytes_guardados'] / 1024 / 1024:.1f} MB"
                 )
         except:
             pass  # Ignorar errores en destructor
-
-
-# Test básico del módulo
-if __name__ == "__main__":
-    import sys
-    import os
-
-    # Añadir directorio padre al path
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-    def test_basico():
-        """Prueba básica del GestorDatos."""
-        print("Probando GestorDatos con estructura por código...")
-
-        try:
-            from config import config
-            import numpy as np
-
-            cfg = config()
-
-            # Crear gestor
-            gestor = GestorDatos(cfg)
-            print(f"✓ GestorDatos creado")
-            print(f"  Estructura configurada: {cfg.archivos.estructura_directorios}")
-
-            # Probar preparación de directorio con código
-            print("\n1. Preparar directorio por código...")
-            codigo_test = "11100530064053876048"
-            directorio = gestor.preparar_directorio(codigo_test)
-            print(f"   ✓ Directorio preparado: {directorio}")
-            print(f"   ✓ Existe: {os.path.exists(directorio)}")
-            print(f"   ✓ Se puede escribir: {os.access(directorio, os.W_OK)}")
-
-            # Probar sanitización de nombre
-            print("\n2. Probar sanitización de nombres...")
-            codigo_problema = "TEST/123\\456*789?012"
-            nombre_sanitizado = gestor._sanitizar_nombre_carpeta(codigo_problema)
-            print(f"   ✓ Código original: {codigo_problema}")
-            print(f"   ✓ Código sanitizado: {nombre_sanitizado}")
-
-            # Probar iniciar captura
-            print("\n3. Iniciar captura de boleto...")
-            gestor.iniciar_captura_boleto(codigo_test)
-            print(f"   ✓ Captura iniciada para: {codigo_test}")
-
-            # Crear imagen de prueba
-            print("\n4. Crear y guardar imagen de prueba...")
-            imagen_test = np.random.randint(0, 255, (100, 150, 3), dtype=np.uint8)
-
-            # Guardar imagen
-            ruta_imagen = gestor.guardar_imagen(imagen_test, "frente")
-            print(f"   ✓ Imagen guardada: {ruta_imagen}")
-            print(
-                f"   ✓ Existe: {os.path.exists(os.path.join(cfg.archivos.ruta_base, ruta_imagen))}"
-            )
-
-            # Probar construcción de datos
-            print("\n5. Construir datos de boleto...")
-            rutas = {
-                "frente": ruta_imagen,
-                "reverso": "reverso_20241222_154600.jpg",
-                "roi": "roi_20241222_154600.jpg",
-            }
-
-            datos = gestor.construir_datos_boleto(
-                rutas_imagenes=rutas,
-                codigo_barras=codigo_test,
-                metadata_adicional={
-                    "notas": "Boleto de prueba con estructura por código"
-                },
-            )
-
-            print(f"   ✓ Datos construidos")
-            print(f"     - Código: {datos['codigo_barras']}")
-            print(f"     - Estructura: {datos.get('estructura_organizacion', 'N/A')}")
-            print(f"     - Fecha: {datos['fecha_captura']}")
-
-            # Guardar metadatos
-            print("\n6. Guardar metadatos...")
-            ruta_metadata = gestor.guardar_metadatos(datos)
-            print(f"   ✓ Metadatos guardados: {ruta_metadata}")
-
-            # Verificar contenido del JSON
-            ruta_completa = os.path.join(cfg.archivos.ruta_base, ruta_metadata)
-            with open(ruta_completa, "r", encoding="utf-8") as f:
-                datos_leidos = json.load(f)
-
-            print(f"   ✓ JSON válido, contiene {len(datos_leidos)} campos")
-            print(
-                f"   ✓ Directorio en metadatos: {datos_leidos.get('directorio_codigo')}"
-            )
-
-            # Finalizar captura
-            print("\n7. Finalizar captura...")
-            datos_final = gestor.finalizar_captura_boleto(datos)
-            print(f"   ✓ Captura finalizada")
-            print(
-                f"     - Ruta metadatos en datos: {datos_final.get('ruta_metadatos')}"
-            )
-
-            # Probar segundo boleto con mismo código
-            print("\n8. Probar segundo boleto con mismo código...")
-            gestor2 = GestorDatos(cfg)
-            gestor2.preparar_directorio(codigo_test)  # Mismo código
-            gestor2.iniciar_captura_boleto(codigo_test)
-
-            # Crear timestamp diferente
-            import time
-
-            time.sleep(0.1)
-
-            # Guardar segunda imagen
-            imagen_test2 = np.random.randint(0, 255, (100, 150, 3), dtype=np.uint8)
-            ruta_imagen2 = gestor2.guardar_imagen(imagen_test2, "frente")
-            print(f"   ✓ Segunda imagen guardada: {ruta_imagen2}")
-
-            # Verificar si está en subdirectorio con índice
-            if "_1" in gestor2._directorio_actual:
-                print(f"   ✓ Evitando sobreescritura: directorio con índice")
-            else:
-                print(
-                    f"   ⚠️  Advertencia: podría sobreescribir (evitar_sobreescritura: {cfg.archivos.evitar_sobreescritura})"
-                )
-
-            # Estadísticas
-            print("\n9. Estadísticas:")
-            stats = gestor.obtener_estadisticas()
-            for clave, valor in stats.items():
-                if clave not in ["directorio_actual"]:  # Ya lo mostramos
-                    print(f"   ✓ {clave}: {valor}")
-
-            # Limpieza (opcional para pruebas)
-            print("\n10. Limpieza de prueba...")
-            if "TEST" in codigo_test:
-                # Eliminar directorios de prueba
-                try:
-                    import shutil
-
-                    directorio_prueba = os.path.dirname(
-                        os.path.join(cfg.archivos.ruta_base, ruta_imagen)
-                    )
-                    if os.path.exists(directorio_prueba):
-                        shutil.rmtree(directorio_prueba)
-                        print(
-                            f"   ✓ Directorio de prueba eliminado: {directorio_prueba}"
-                        )
-
-                    if "gestor2" in locals():
-                        directorio2 = gestor2._directorio_actual
-                        if directorio2 and os.path.exists(directorio2):
-                            shutil.rmtree(directorio2)
-                            print(f"   ✓ Segundo directorio eliminado: {directorio2}")
-                except Exception as e:
-                    print(f"   ⚠️  No se pudo limpiar: {e}")
-
-            print("\n✅ GestorDatos con estructura por código funciona correctamente")
-            return True
-
-        except Exception as e:
-            print(f"✗ Error: {e}")
-            import traceback
-
-            traceback.print_exc()
-
-            # Intentar limpiar en caso de error
-            try:
-                import shutil
-
-                if "directorio" in locals() and os.path.exists(directorio):
-                    shutil.rmtree(directorio)
-                if (
-                    "gestor2" in locals()
-                    and gestor2._directorio_actual
-                    and os.path.exists(gestor2._directorio_actual)
-                ):
-                    shutil.rmtree(gestor2._directorio_actual)
-            except:
-                pass
-
-            return False
-
-    if not test_basico():
-        sys.exit(1)

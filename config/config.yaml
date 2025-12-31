@@ -59,12 +59,11 @@ archivos:
   
   # Estructura de nombres de archivo dentro de cada carpeta
   # Patrones disponibles: {tipo}, {codigo}, {timestamp}, {indice}, {fecha}
-  nombre_frente: "frente_{timestamp}"
-  nombre_reverso: "reverso_{timestamp}"
-  nombre_roi: "roi_{timestamp}"
-  nombre_metadata: "metadata_{timestamp}"
-  nombre_fallida: "fallida_{timestamp}"
-  
+  nombre_frente: "frente_{codigo}"
+  nombre_reverso: "reverso_{codigo}"
+  nombre_roi: "roi_{codigo}"
+  nombre_metadata: "metadata_{codigo}"
+  nombre_fallida: "fallida_{codigo}"
   # NUEVO: Para evitar conflictos con múltiples boletos del mismo código
   # Si es true, añade índice cuando ya existe una carpeta
   evitar_sobreescritura: true
